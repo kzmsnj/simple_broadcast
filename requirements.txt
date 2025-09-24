@@ -6,4 +6,4 @@ pika==1.3.2
 Flask-Migrate==4.0.5
 SQLAlchemy==2.0.23
 gunicorn==20.1.0  # server WSGI
-eventlet==0.31.1  # kompatibel dengan gunicorn 20.x
+gevent==22.10.2  # worker untuk websockets dengan gunicorn

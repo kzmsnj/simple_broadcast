@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, session, redirect, url_for, request, jsonify, current_app
 from ..models import Channel, Message, User
-from .. import db, sock, online_users
+from .. import db, sock, online_users, RABBITMQ_HOST
 from .helpers import publish_to_rabbitmq, broadcast_user_list
 import json
 import pika
@@ -100,7 +100,8 @@ def subscribe(ws):
     # Listener RabbitMQ di thread terpisah
     def rabbitmq_listener():
         try:
-            connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
+            params = pika.URLParameters(RABBITMQ_HOST)
+            connection = pika.BlockingConnection(params)
             channel = connection.channel()
             channel.exchange_declare(exchange='webapp_exchange_rooms', exchange_type='topic')
             channel.exchange_declare(exchange='webapp_exchange_notifications', exchange_type='topic')

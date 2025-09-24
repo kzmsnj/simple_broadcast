@@ -80,7 +80,9 @@ def subscribe(ws):
     """
     room_name = request.args.get('room')
     username = request.args.get('username')
+    print(f"WebSocket connection attempt: room={room_name}, username={username}")
     if not room_name or not username:
+        print("WebSocket connection rejected: missing room or username")
         ws.close(); return
 
     # Logika Pengguna Online (Bergabung)
@@ -100,6 +102,7 @@ def subscribe(ws):
     # Listener RabbitMQ di thread terpisah
     def rabbitmq_listener():
         try:
+            print(f"Starting RabbitMQ listener for room: {room_name}")
             params = pika.URLParameters(RABBITMQ_HOST)
             connection = pika.BlockingConnection(params)
             channel = connection.channel()
@@ -111,7 +114,9 @@ def subscribe(ws):
             channel.queue_bind(exchange='webapp_exchange_rooms', queue=queue_name, routing_key=routing_key)
             channel.queue_bind(exchange='webapp_exchange_notifications', queue=queue_name, routing_key=routing_key)
             def callback(ch, method, properties, body):
-                try: ws.send(body.decode('utf-8'))
+                try: 
+                    print(f"Received message for room {room_name}: {body.decode('utf-8')}")
+                    ws.send(body.decode('utf-8'))
                 except: ch.stop_consuming()
             channel.basic_consume(queue=queue_name, on_message_callback=callback, auto_ack=True)
             channel.start_consuming()

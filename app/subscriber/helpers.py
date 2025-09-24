@@ -1,19 +1,24 @@
-# app/subscriber/helpers.py
-
 import pika
 import json
 from .. import RABBITMQ_HOST, NOTIF_EXCHANGE, online_users
 
 def publish_to_rabbitmq(exchange, routing_key, body):
-    """Fungsi umum untuk mempublikasikan pesan ke RabbitMQ."""
+    """
+    Fungsi umum untuk mempublikasikan pesan ke RabbitMQ.
+    Sudah disesuaikan untuk menggunakan URL koneksi lengkap dari environment variable.
+    """
     try:
-        connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST))
+        # PERUBAHAN UTAMA: Gunakan pika.URLParameters untuk membaca URL lengkap
+        # Variabel RABBITMQ_HOST sekarang bisa berisi URL dari CloudAMQP atau 'localhost'
+        params = pika.URLParameters(RABBITMQ_HOST)
+        
+        # Buat koneksi menggunakan parameter tersebut
+        connection = pika.BlockingConnection(params)
+        
         channel = connection.channel()
         channel.exchange_declare(exchange=exchange, exchange_type='topic')
         channel.basic_publish(exchange=exchange, routing_key=routing_key, body=body)
         connection.close()
-    except pika.exceptions.AMQPConnectionError as e:
-        print(f"Error: Tidak dapat terhubung ke RabbitMQ. Detail: {e}")
     except Exception as e:
         print(f"Terjadi error saat publish ke RabbitMQ: {e}")
 

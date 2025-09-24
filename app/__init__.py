@@ -8,7 +8,7 @@ db = SQLAlchemy()
 sock = Sock()
 
 online_users = {}
-RABBITMQ_HOST = 'localhost'
+RABBITMQ_HOST = os.environ.get('CLOUDAMQP_URL', 'amqps://boxyswfe:c_0Y3HYRm3BcSeMINvdarthrlQOapZ8q@armadillo.rmq.cloudamqp.com/boxyswfe')
 CHAT_EXCHANGE = 'webapp_exchange_rooms'
 NOTIF_EXCHANGE = 'webapp_exchange_notifications'
 

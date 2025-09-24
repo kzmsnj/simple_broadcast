@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+
+{% block title %}Publisher Admin{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <a href="{{ url_for('auth.dashboard') }}" class="btn btn-outline-light custom-btn-outline"> {# Added custom-btn-outline #}
+            <span class="material-icons" style="vertical-align: middle;">arrow_back</span>
+            Kembali ke Dashboard
+        </a>
+        <h2 class="text-white">Publisher Dashboard</h2>
+        <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-light btn-sm custom-btn-outline">Logout</a> {# Added custom-btn-outline #}
+    </div>
+
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+             {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} alert-dismissible fade show custom-alert" role="alert"> {# Added custom-alert #}
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <div class="card custom-card-design"> {# Added custom-card-design #}
+                <div class="card-body p-4">
+                    <h4 class="card-title mb-4">Buat Channel Baru</h4>
+                    <form method="POST">
+                        <div class="mb-3">
+                            <label for="channel_name" class="form-label">Nama Channel</label>
+                            <input type="text" class="form-control custom-input" id="channel_name" name="channel_name" required> {# Added custom-input #}
+                        </div>
+                        <div class="mb-3">
+                            <label for="description" class="form-label">Deskripsi Singkat</label>
+                            <textarea class="form-control custom-input" id="description" name="description" rows="3"></textarea> {# Added custom-input #}
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100 custom-btn-primary">Buat Channel</button> {# Added custom-btn-primary #}
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

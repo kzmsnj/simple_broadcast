@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+
+{% block title %}Login{% endblock %}
+
+{% block content %}
+<div class="container d-flex justify-content-center align-items-center vh-100">
+    <div class="login-card custom-card-design">
+        <div class="text-center mb-4">
+            <div class="app-icon mb-3">
+                {# Ganti ini dengan SVG untuk ikon chat_bubble #}
+                <img src="{{ url_for('static', filename='svg/chat_bubble.svg') }}" alt="Chat Icon" class="app-icon-svg">
+            </div>
+            <h1 class="login-card .app-title">Pro Chat</h1>
+            <p class="login-card .app-subtitle">Real-time Messaging Service</p>
+        </div>
+
+        <h4 class="form-title">Masukkan Username Anda</h4>
+        <p class="form-subtitle">Silakan masukkan username untuk melanjutkan</p>
+        
+        <form method="POST" action="{{ url_for('auth.login') }}">
+            <div class="mb-3">
+                <input type="text" name="username" class="form-control form-control-lg custom-input" placeholder="e.g., farras" required>
+            </div>
+            <button type="submit" class="btn btn-primary btn-lg w-100 custom-btn-primary">
+                {# Ganti ini dengan SVG untuk ikon arrow_forward #}
+                <img src="{{ url_for('static', filename='svg/arrow_forward.svg') }}" alt="Login Icon" class="button-icon-svg"> Masuk
+            </button>
+        </form>
+        <p class="form-tip mt-3">Web uji coba king, insyaallah databasenya jalan</p>
+    </div>
+</div>
+{% endblock %}

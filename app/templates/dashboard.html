@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="dashboard-header">
+        <span class="username-badge custom-badge-dark"> {# Added custom-badge-dark #}
+            <span class="material-icons">account_circle</span> {{ username }}
+        </span>
+        <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-light btn-sm custom-btn-outline">Logout</a> {# Added custom-btn-outline #}
+    </div>
+
+    <div class="text-center text-white mb-5">
+        <h2 class="display-5">Selamat datang kembali!</h2>
+        <p class="lead">Pilih Peran Kamu</p>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show custom-alert" role="alert"> {# Added custom-alert #}
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div class="row justify-content-center g-4">
+    <div class="col-md-5">
+        <a href="{{ url_for('publisher.dashboard') }}" class="role-card custom-card-design">
+            <div class="role-icon-wrapper custom-bg-danger"> {# Changed class to custom-bg-danger #}
+                    <span class="material-icons">send</span>
+                </div>
+                <h3>Pengirim Pesan</h3>
+                <p>Buat channel dan kirim pesan ke banyak orang sekaligus.</p>
+                <ul class="role-features">
+                    <li>Buat channel baru</li>
+                    <li>Kirim pesan broadcast</li>
+                </ul>
+            </a>
+        </div>
+        <div class="col-md-5">
+            <a href="{{ url_for('subscriber.dashboard') }}" class="role-card custom-card-design"> {# Added custom-card-design #}
+                <div class="role-icon-wrapper custom-bg-info"> {# Changed class to custom-bg-info #}
+                    <span class="material-icons">people</span>
+                </div>
+                <h3>Penerima Pesan</h3>
+                <p>Cari dan subscribe channel untuk dapat notifikasi real-time.</p>
+                <ul class="role-features">
+                    <li>Jelajahi channel</li>
+                    <li>Notifikasi real-time</li>
+                </ul>
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

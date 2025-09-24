@@ -1,0 +1,165 @@
+{% extends 'base.html' %}
+
+{% block title %}Publisher Studio{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="studio-header">
+        <a href="{{ url_for('auth.dashboard') }}" class="btn btn-outline-light btn-sm custom-btn-outline">
+            <span class="material-icons" style="vertical-align: middle;">arrow_back</span>
+        </a>
+        <div class="text-center">
+            <h3>Studio Broadcast</h3>
+            <p class="mb-0 text-white-50">Hai {{ session.get('username') }}, selamat datang kembali!</p>
+        </div>
+        <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-light btn-sm custom-btn-outline">Logout</a>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="row justify-content-center">
+                <div class="col-md-10">
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <div class="row justify-content-center g-3 my-3">
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-icon"><span class="material-icons">podcasts</span></div>
+                <div class="stat-info">
+                    <h4 class="mb-0">{{ stats.channel_count }}</h4>
+                    <p class="mb-0 text-muted">My Channels</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-icon"><span class="material-icons">group</span></div>
+                <div class="stat-info">
+                    <h4 class="mb-0">0</h4>
+                    <p class="mb-0 text-muted">Total Subscribers</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-icon"><span class="material-icons">send</span></div>
+                <div class="stat-info">
+                    <h4 class="mb-0" id="messages-sent-stat">{{ stats.messages_sent }}</h4>
+                    <p class="mb-0 text-muted">Messages Sent</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row justify-content-center g-4">
+        <div class="col-md-5">
+            <div class="studio-panel">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="mb-0">My Channels</h5>
+                    <a href="{{ url_for('publisher.create_channel_form') }}" class="btn btn-primary btn-sm custom-btn-primary">+ Create</a>
+                </div>
+                {% if channels %}
+                    <ul class="list-group">
+                        {% for channel in channels %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            {{ channel.name }}
+                            <span class="badge bg-secondary rounded-pill" id="channel-msg-count-{{ channel.id }}">
+                                {{ channel.messages|length }} msgs
+                            </span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    {% endif %}
+            </div>
+        </div>
+        <div class="col-md-5">
+            <div class="studio-panel">
+                <h5 class="mb-3">Send Message</h5>
+                {% if channels %}
+                <form id="send-message-form" action="{{ url_for('publisher.send_message') }}" method="POST">
+                    <div class="mb-3">
+                        <label for="channel_id" class="form-label">Pilih Channel</label>
+                        <select name="channel_id" id="channel_id" class="form-select" required>
+                            {% for channel in channels %}
+                            <option value="{{ channel.id }}">{{ channel.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="message_content" class="form-label">Isi Pesan</label>
+                        <textarea name="message_content" id="message_content" rows="4" class="form-control" placeholder="Tulis pesan siaran Anda di sini..." required></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100 custom-btn-primary">Broadcast Message</button>
+                </form>
+                {% else %}
+                <div class="text-center p-4">
+                     <span class="material-icons fs-1 text-muted">speaker_notes_off</span>
+                     <p class="mt-2">Buat channel terlebih dahulu untuk mulai mengirim pesan.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const sendMessageForm = document.getElementById('send-message-form');
+    const messageStatElement = document.getElementById('messages-sent-stat');
+    const messageContentTextarea = document.getElementById('message_content');
+
+    if (sendMessageForm) {
+        sendMessageForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const formData = new FormData(sendMessageForm);
+            
+            try {
+                const response = await fetch(sendMessageForm.action, {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Update statistik total (tetap sama)
+                    messageStatElement.textContent = data.new_total_message_count;
+                    messageContentTextarea.value = '';
+
+                    // --- LOGIKA BARU: Update badge channel spesifik ---
+                    if (data.updated_channel_id && data.new_channel_message_count !== undefined) {
+                        // 1. Temukan elemen badge yang benar menggunakan id uniknya
+                        const channelBadge = document.getElementById(`channel-msg-count-${data.updated_channel_id}`);
+                        
+                        // 2. Jika elemennya ada, perbarui teksnya
+                        if (channelBadge) {
+                            channelBadge.textContent = `${data.new_channel_message_count} msgs`;
+                        }
+                    }
+                    // --- AKHIR LOGIKA BARU ---
+
+                    console.log('Success:', data.message);
+                } else {
+                    console.error('Error:', data.message);
+                    alert(`Error: ${data.message}`);
+                }
+            } catch (error) {
+                console.error('Network Error:', error);
+                alert('A network error occurred. Please try again.');
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

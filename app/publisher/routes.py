@@ -1,32 +1,40 @@
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, jsonify
-from ..models import Channel, Message
-from .. import db
-# Kita butuh helper RabbitMQ untuk mengirim pesan
+from ..models import Channel, Message, User
+from .. import db, sock
 from ..subscriber.helpers import publish_to_rabbitmq
 import json
+import pika
+import threading
 
 publisher_bp = Blueprint('publisher', __name__, url_prefix='/publisher')
 
 # RUTE UTAMA: Menampilkan Dashboard Publisher
 @publisher_bp.route('/')
 def dashboard():
-    """
-    Menampilkan halaman utama "Studio Broadcast".
-    Mengambil data channel dan statistik pesan yang dimiliki oleh pengguna.
-    """
-    if 'username' not in session:
+    if 'user_id' not in session:
         return redirect(url_for('auth.login'))
     
-    username = session['username']
-    # Ambil semua channel yang dibuat oleh pengguna yang sedang login
-    user_channels = Channel.query.filter_by(creator=username).order_by(Channel.created_at.desc()).all()
+    user_id = session['user_id']
+    user = User.query.get(user_id)
     
-    # Hitung total pesan yang dikirim oleh pengguna ini dari semua channel miliknya
-    total_messages_sent = db.session.query(Message).join(Channel).filter(Channel.creator == username).count()
+    # --- TAMBAHKAN BLOK VALIDASI INI ---
+    if not user:
+        # Jika user dengan ID dari session tidak ada di DB,
+        # bersihkan session dan paksa login ulang.
+        session.clear()
+        flash("Sesi Anda tidak valid, silakan login kembali.", "warning")
+        return redirect(url_for('auth.login'))
+    # --- AKHIR BLOK VALIDASI ---
+    
+    user_channels = Channel.query.filter_by(creator_id=user_id).order_by(Channel.created_at.desc()).all()
+    total_messages_sent = db.session.query(Message).join(Channel).filter(Channel.creator_id == user_id).count()
+    
+    total_subscribers = sum(len(channel.subscribers) for channel in user.channels)
     
     stats = {
         'channel_count': len(user_channels),
-        'messages_sent': total_messages_sent
+        'messages_sent': total_messages_sent,
+        'total_subscribers': total_subscribers
     }
     
     return render_template('publisher.html', channels=user_channels, stats=stats)
@@ -35,7 +43,7 @@ def dashboard():
 @publisher_bp.route('/create', methods=['GET'])
 def create_channel_form():
     """Hanya menampilkan halaman dengan form untuk membuat channel baru."""
-    if 'username' not in session:
+    if 'user_id' not in session:
         return redirect(url_for('auth.login'))
     return render_template('create_channel.html')
 
@@ -43,7 +51,7 @@ def create_channel_form():
 @publisher_bp.route('/create', methods=['POST'])
 def create_channel_action():
     """Memproses data dari form pembuatan channel."""
-    if 'username' not in session:
+    if 'user_id' not in session:
         return redirect(url_for('auth.login'))
     
     channel_name = request.form.get('channel_name')
@@ -56,58 +64,110 @@ def create_channel_action():
     new_channel = Channel(
         name=channel_name,
         description=description,
-        creator=session['username']
+        creator_id=session['user_id']
     )
     db.session.add(new_channel)
     db.session.commit()
     flash(f"Channel '{channel_name}' berhasil dibuat!", 'success')
-    # Kembali ke dashboard setelah berhasil membuat channel
     return redirect(url_for('publisher.dashboard'))
             
 # RUTE UNTUK MENGIRIM PESAN (UNTUK AJAX/FETCH)
 @publisher_bp.route('/send', methods=['POST'])
 def send_message():
     """
-    Menerima request pengiriman pesan, menyimpannya, menyiarkannya,
-    dan mengembalikan data update yang lebih detail dalam format JSON.
+    Menerima request pengiriman pesan dan mengembalikan data update
+    dalam format JSON untuk pembaruan real-time di frontend.
     """
-    if 'username' not in session:
+    if 'user_id' not in session:
         return jsonify({'status': 'error', 'message': 'Not authenticated'}), 401
 
     channel_id = request.form.get('channel_id')
     content = request.form.get('message_content')
-    username = session['username']
+    user_id = session['user_id']
     
     channel = Channel.query.get(channel_id)
 
-    if not channel or channel.creator != username:
+    if not channel or channel.creator_id != user_id:
         return jsonify({'status': 'error', 'message': 'Invalid channel or permission denied'}), 403
 
-    # 1. Simpan pesan ke database
     new_message = Message(
         channel_id=channel.id,
-        username=username,
+        username=session['username'],
         content=content
     )
     db.session.add(new_message)
     db.session.commit()
 
-    # 2. Siarkan pesan ke RabbitMQ
     chat_message = new_message.to_dict()
     routing_key = f"rooms.{channel.name}"
     publish_to_rabbitmq('webapp_exchange_rooms', routing_key, json.dumps(chat_message))
     
-    # 3. Hitung kembali total pesan dan kirim sebagai respons JSON
-    total_messages_user = db.session.query(Message).join(Channel).filter(Channel.creator == username).count()
-    
-    # --- TAMBAHAN BARU: Hitung pesan untuk channel spesifik ini ---
+    total_messages_user = db.session.query(Message).join(Channel).filter(Channel.creator_id == user_id).count()
     total_messages_channel = Message.query.filter_by(channel_id=channel.id).count()
     
     return jsonify({
         'status': 'success',
         'message': f"Pesan terkirim ke '{channel.name}'!",
         'new_total_message_count': total_messages_user,
-        # --- TAMBAHAN BARU: Kirim data update untuk channel ---
         'updated_channel_id': channel.id,
         'new_channel_message_count': total_messages_channel
     })
+
+# ENDPOINT API UNTUK MENGAMBIL STATISTIK TERBARU
+@publisher_bp.route('/stats')
+def get_stats():
+    """API endpoint untuk mengambil data statistik terbaru."""
+    if 'user_id' not in session:
+        return jsonify({}), 401
+    
+    user = User.query.get(session['user_id'])
+    if not user:
+        return jsonify({}), 404
+    
+    total_subscribers = sum(len(channel.subscribers) for channel in user.channels)
+    
+    return jsonify({
+        'total_subscribers': total_subscribers
+    })
+
+# ENDPOINT WEBSOCKET UNTUK NOTIFIKASI REAL-TIME
+@sock.route('/publisher/notifications')
+def publisher_notifications(ws):
+    """
+    WebSocket endpoint untuk publisher mendengarkan update
+    tentang subscription di channel-channel miliknya.
+    """
+    user_id = session.get('user_id')
+    if not user_id:
+        ws.close(); return
+
+    def rabbitmq_listener():
+        try:
+            connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
+            channel = connection.channel()
+            channel.exchange_declare(exchange='webapp_exchange_notifications', exchange_type='topic')
+            result = channel.queue_declare(queue='', exclusive=True)
+            queue_name = result.method.queue
+            routing_key = f"user.{user_id}"
+            channel.queue_bind(exchange='webapp_exchange_notifications', queue=queue_name, routing_key=routing_key)
+
+            def callback(ch, method, properties, body):
+                try:
+                    ws.send(body.decode('utf-8'))
+                except:
+                    ch.stop_consuming()
+            
+            channel.basic_consume(queue=queue_name, on_message_callback=callback, auto_ack=True)
+            channel.start_consuming()
+        except Exception as e:
+            print(f"Publisher listener error: {e}")
+
+    listener_thread = threading.Thread(target=rabbitmq_listener)
+    listener_thread.daemon = True
+    listener_thread.start()
+
+    while not ws.closed:
+        try:
+            ws.receive(timeout=60)
+        except Exception:
+            break

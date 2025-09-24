@@ -6,140 +6,187 @@ document.addEventListener('DOMContentLoaded', () => {
     const subscribeButtons = document.querySelectorAll('.subscribe-btn');
     const onlineUsersCountSpan = document.getElementById('online-users-count');
     const typingIndicator = document.getElementById('typing-indicator');
+    const subscriptionsCountSpan = document.getElementById('subscriptions-count');
 
     // === Application State ===
-    let ws; // Variabel untuk menyimpan koneksi WebSocket
-    let currentRoom = null; // Untuk melacak room yang sedang aktif
-    
-    // PERBAIKAN #1: Selector diubah ke '.dash-sidebar' agar username terbaca benar
-    const usernameBadgeElement = document.querySelector('.chat-header .username-badge.custom-badge-dark');
-    const username = usernameBadgeElement ? usernameBadgeElement.textContent.replace('account_circle', '').trim() : null;
+    let activeConnections = {}; // Melacak koneksi WebSocket yang aktif
+    const username = currentUsername; // Mengambil dari variabel global di HTML
+    const feedPlaceholderHTML = `<div class="feed-placeholder custom-feed-placeholder"><span class="material-icons">notifications</span><p>No messages yet</p><small>Subscribe to channels to receive messages</small></div>`;
 
-    const feedPlaceholderHTML = `<div class="feed-placeholder custom-feed-placeholder"><span class="material-icons">notifications</span><p>No messages yet</p><small>Subscribe to a channel to receive messages</small></div>`;
+    // === Fungsi Utama ===
 
-    // === WebSocket Logic ===
+    /**
+     * Mengirim request ke server untuk subscribe/unsubscribe sebuah channel.
+     * @param {string} channelId - ID dari channel.
+     * @param {HTMLElement} buttonElement - Elemen tombol yang diklik.
+     */
+    async function toggleSubscription(channelId, buttonElement) {
+        try {
+            const response = await fetch('/subscriber/toggle_subscription', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ channel_id: channelId })
+            });
+            const data = await response.json();
+
+            if (response.ok) {
+                const roomName = buttonElement.dataset.room;
+                if (data.action === 'subscribed') {
+                    // Berhasil subscribe, sekarang hubungkan ke WebSocket
+                    connect(roomName);
+                    updateButtonState(buttonElement, true);
+                } else {
+                    // Berhasil unsubscribe, putuskan koneksi WebSocket
+                    disconnect(roomName);
+                    updateButtonState(buttonElement, false);
+                }
+                // Update kartu statistik
+                subscriptionsCountSpan.textContent = data.subscription_count;
+            } else {
+                alert(`Error: ${data.message || 'Terjadi kesalahan.'}`);
+            }
+        } catch (error) {
+            console.error("Gagal melakukan toggle subscription:", error);
+            alert("Gagal terhubung ke server.");
+        }
+    }
+
+    /**
+     * Membuat dan mengelola koneksi WebSocket untuk sebuah room.
+     * @param {string} roomName - Nama room yang akan dihubungkan.
+     */
     function connect(roomName) {
-        if (!username) {
-            alert("Username tidak ditemukan. Silakan login kembali.");
+        if (!username || username === 'Guest' || activeConnections[roomName]) {
             return;
         }
 
-        if (ws) {
-            ws.close(); // Tutup koneksi lama jika ada
-        }
-        
-        currentRoom = roomName;
-        updateUIForNewRoom(roomName);
-
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        ws = new WebSocket(`${wsProtocol}//${location.host}/subscribe?room=${roomName}&username=${username}`);
+        const wsURL = `${wsProtocol}//${location.host}/subscribe?room=${roomName}&username=${username}`;
+        const ws = new WebSocket(wsURL);
 
         ws.onopen = () => {
-            statusIndicator.classList.add('connected');
+            activeConnections[roomName] = ws;
+            updateGlobalStatus();
+            // Tampilkan feed dari channel yang baru di-subscribe
+            roomNameDisplay.textContent = roomName; 
+            messagesDiv.innerHTML = ''; // Kosongkan feed untuk pesan baru
         };
 
         ws.onclose = () => {
-            statusIndicator.classList.remove('connected');
-            if(currentRoom === roomName) {
-                 updateUIForNewRoom("Not Subscribed");
-            }
+            delete activeConnections[roomName];
+            updateGlobalStatus();
         };
 
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
+            data.room = roomName; // Tambahkan info room ke data
             handleIncomingData(data);
         };
+        
+        ws.onerror = (error) => console.error(`WebSocket Error di room '${roomName}':`, error);
     }
-    
+
+    /**
+     * Menutup koneksi WebSocket untuk sebuah room.
+     * @param {string} roomName - Nama room yang akan diputuskan.
+     */
+    function disconnect(roomName) {
+        if (activeConnections[roomName]) {
+            activeConnections[roomName].close();
+        }
+    }
+
+    /**
+     * Memproses semua jenis data yang masuk dari WebSocket.
+     * @param {object} data - Data JSON dari server.
+     */
     function handleIncomingData(data) {
-        switch (data.type) {
-            case 'chat':
-            case 'history':
-                renderMessage(data);
-                break;
-            case 'update-users':
-                onlineUsersCountSpan.textContent = data.users.length;
-                break;
-            case 'typing':
-                 if (data.isTyping && data.username !== username) {
-                    typingIndicator.textContent = `${data.username} is typing...`;
-                 } else {
-                    typingIndicator.textContent = '';
-                 }
-                 break;
+        renderMessage(data);
+        if (data.type === 'update-users' && data.room === roomNameDisplay.textContent) {
+            onlineUsersCountSpan.textContent = data.users.length;
         }
     }
 
     // === UI Rendering Functions ===
-    function updateUIForNewRoom(roomName) {
-        roomNameDisplay.textContent = roomName;
-        messagesDiv.innerHTML = feedPlaceholderHTML;
-        onlineUsersCountSpan.textContent = '0';
-        typingIndicator.textContent = '';
 
-        subscribeButtons.forEach(btn => {
-            if (btn.dataset.room === roomName) {
-                btn.textContent = 'Subscribed';
-                btn.classList.remove('custom-btn-primary');
-                btn.classList.add('btn-secondary', 'disabled');
-            } else {
-                btn.textContent = 'Subscribe';
-                btn.classList.add('custom-btn-primary');
-                btn.classList.remove('btn-secondary', 'disabled');
-            }
-        });
+    /** Memperbarui status global UI (indikator koneksi & jumlah subscription). */
+    function updateGlobalStatus() {
+        const count = Object.keys(activeConnections).length;
+        if (count > 0) {
+            statusIndicator.classList.add('connected');
+        } else {
+            statusIndicator.classList.remove('connected');
+            roomNameDisplay.textContent = 'Not Subscribed';
+            messagesDiv.innerHTML = feedPlaceholderHTML;
+            onlineUsersCountSpan.textContent = '0';
+        }
+    }
+
+    /** Mengubah tampilan tombol menjadi 'Subscribed' atau 'Subscribe'. */
+    function updateButtonState(button, isSubscribed) {
+        if (isSubscribed) {
+            button.textContent = 'Subscribed';
+            button.classList.remove('custom-btn-primary');
+            button.classList.add('btn-secondary', 'disabled');
+        } else {
+            button.textContent = 'Subscribe';
+            button.classList.add('custom-btn-primary');
+            button.classList.remove('btn-secondary', 'disabled');
+            button.disabled = false;
+        }
     }
     
+    /** Menampilkan pesan di message feed. */
     function renderMessage(data) {
-        if (messagesDiv.querySelector('.custom-feed-placeholder')) {
+        if (messagesDiv.querySelector('.feed-placeholder')) {
             messagesDiv.innerHTML = '';
         }
 
-        const isHistory = data.type === 'history';
         const wrapper = document.createElement('div');
         wrapper.classList.add('message-wrapper');
-        
         const bubble = document.createElement('div');
         bubble.classList.add('message-bubble');
 
-        if (data.username === username) {
-            wrapper.classList.add('sent');
-        } else {
-            wrapper.classList.add('received');
-        }
+        const roomBadge = `<span class="badge bg-secondary me-2">${data.room}</span>`;
+
+        if (data.username === username) wrapper.classList.add('sent');
+        else wrapper.classList.add('received');
 
         bubble.innerHTML = `
-            <div class="message-meta">${data.username}</div>
+            <div class="message-meta">${roomBadge}${data.username}</div>
             <div class="message-text">${data.message}</div>
             <div class="message-time">${data.timestamp}</div>
         `;
         wrapper.appendChild(bubble);
 
-        // PERBAIKAN #2: Logika render dibalik agar urutan pesan benar
-        if (isHistory) {
-            // Riwayat pesan ditambahkan ke bagian atas (prepend)
-            // agar pesan terlama muncul di paling atas (paling bawah di layar)
-            messagesDiv.prepend(wrapper); 
-        } else {
-            // Pesan baru ditambahkan ke bagian bawah (append)
-            // agar muncul di paling bawah (paling atas di layar)
-            messagesDiv.appendChild(wrapper); 
-        }
-        
-        // PERBAIKAN #3: Logika auto-scroll disederhanakan
-        // Selalu scroll ke paling bawah (paling baru) setelah render
+        // Selalu tambahkan pesan baru di paling atas (secara visual di bawah karena flex-reverse)
+        messagesDiv.prepend(wrapper);
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
 
-    // === Event Listeners ===
+    // === Event Listeners Initialization ===
+
+    /** Menambahkan event listener ke semua tombol subscribe. */
     subscribeButtons.forEach(button => {
         button.addEventListener('click', (event) => {
-            const roomToJoin = event.target.dataset.room;
-            if (currentRoom !== roomToJoin) {
-                connect(roomToJoin);
-            }
+            const buttonElement = event.target;
+            const channelId = buttonElement.dataset.channelId;
+            // Panggil fungsi API, bukan langsung connect
+            toggleSubscription(channelId, buttonElement);
         });
     });
 
-    console.log("Subscriber dashboard script loaded and ready.");
+    /**
+     * Saat halaman dimuat, otomatis hubungkan WebSocket ke channel
+     * yang sudah di-subscribe dari database.
+     */
+    function initializeSubscriptions() {
+        const subscribedButtons = document.querySelectorAll('.subscribe-btn.disabled');
+        subscriptionsCountSpan.textContent = subscribedButtons.length;
+        subscribedButtons.forEach(button => {
+            connect(button.dataset.room);
+        });
+    }
+
+    initializeSubscriptions();
 });

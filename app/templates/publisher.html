@@ -44,7 +44,7 @@
             <div class="stat-card">
                 <div class="stat-icon"><span class="material-icons">group</span></div>
                 <div class="stat-info">
-                    <h4 class="mb-0">0</h4>
+                    <h4 class="mb-0" id="total-subscribers-stat">{{ stats.total_subscribers }}</h4>
                     <p class="mb-0 text-muted">Total Subscribers</p>
                 </div>
             </div>
@@ -79,7 +79,12 @@
                         {% endfor %}
                     </ul>
                 {% else %}
-                    {% endif %}
+                    <div class="text-center p-4">
+                        <span class="material-icons fs-1 text-muted">radio</span>
+                        <p class="mt-2 mb-3">Belum Ada Channel</p>
+                        <a href="{{ url_for('publisher.create_channel_form') }}" class="btn btn-primary custom-btn-primary">Buat Channel Pertama</a>
+                    </div>
+                {% endif %}
             </div>
         </div>
         <div class="col-md-5">
@@ -116,6 +121,7 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+    // === Bagian 1: Update Real-time Statistik Pesan ===
     const sendMessageForm = document.getElementById('send-message-form');
     const messageStatElement = document.getElementById('messages-sent-stat');
     const messageContentTextarea = document.getElementById('message_content');
@@ -126,32 +132,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const formData = new FormData(sendMessageForm);
             
             try {
-                const response = await fetch(sendMessageForm.action, {
-                    method: 'POST',
-                    body: formData
-                });
+                const response = await fetch(sendMessageForm.action, { method: 'POST', body: formData });
                 const data = await response.json();
 
                 if (response.ok) {
-                    // Update statistik total (tetap sama)
                     messageStatElement.textContent = data.new_total_message_count;
                     messageContentTextarea.value = '';
 
-                    // --- LOGIKA BARU: Update badge channel spesifik ---
                     if (data.updated_channel_id && data.new_channel_message_count !== undefined) {
-                        // 1. Temukan elemen badge yang benar menggunakan id uniknya
                         const channelBadge = document.getElementById(`channel-msg-count-${data.updated_channel_id}`);
-                        
-                        // 2. Jika elemennya ada, perbarui teksnya
                         if (channelBadge) {
                             channelBadge.textContent = `${data.new_channel_message_count} msgs`;
                         }
                     }
-                    // --- AKHIR LOGIKA BARU ---
-
-                    console.log('Success:', data.message);
                 } else {
-                    console.error('Error:', data.message);
                     alert(`Error: ${data.message}`);
                 }
             } catch (error) {
@@ -160,6 +154,37 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    // === Bagian 2: Update Real-time Statistik Subscriber ===
+    const totalSubscribersElement = document.getElementById('total-subscribers-stat');
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsURL = `${wsProtocol}//${location.host}/publisher/notifications`;
+    
+    function connectNotifications() {
+        const ws = new WebSocket(wsURL);
+
+        ws.onopen = () => console.log("Terhubung ke notifikasi subscriber.");
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === 'subscription_update') {
+                // Lakukan fetch untuk mendapatkan data statistik terbaru dari server
+                fetch("{{ url_for('publisher.get_stats') }}")
+                    .then(response => response.json())
+                    .then(stats => {
+                        totalSubscribersElement.textContent = stats.total_subscribers;
+                    });
+            }
+        };
+
+        ws.onclose = () => {
+            console.log("Koneksi notifikasi terputus, mencoba lagi dalam 5 detik.");
+            setTimeout(connectNotifications, 5000);
+        };
+        
+        ws.onerror = (error) => console.error("Error koneksi notifikasi:", error);
+    }
+
+    connectNotifications();
 });
 </script>
 {% endblock %}

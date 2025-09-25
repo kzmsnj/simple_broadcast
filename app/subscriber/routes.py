@@ -100,7 +100,8 @@ def subscribe(ws):
     # Listener RabbitMQ di thread terpisah
     def rabbitmq_listener():
         try:
-            connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
+            params = pika.URLParameters(RABBITMQ_HOST)
+            connection = pika.BlockingConnection(params)
             channel = connection.channel()
             channel.exchange_declare(exchange='webapp_exchange_rooms', exchange_type='topic')
             channel.exchange_declare(exchange='webapp_exchange_notifications', exchange_type='topic')

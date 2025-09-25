@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, session, redirect, url_for, request, jsonify, current_app
 from ..models import Channel, Message, User
-from .. import db, sock, online_users
+from .. import db, sock, online_users, RABBITMQ_HOST
 from .helpers import publish_to_rabbitmq, broadcast_user_list
 import json
 import pika
@@ -80,7 +80,9 @@ def subscribe(ws):
     """
     room_name = request.args.get('room')
     username = request.args.get('username')
+    print(f"WebSocket connection attempt: room={room_name}, username={username}")
     if not room_name or not username:
+        print("WebSocket connection rejected: missing room or username")
         ws.close(); return
 
     # Logika Pengguna Online (Bergabung)
@@ -100,6 +102,10 @@ def subscribe(ws):
     # Listener RabbitMQ di thread terpisah
     def rabbitmq_listener():
         try:
+<<<<<<< HEAD
+=======
+            print(f"Starting RabbitMQ listener for room: {room_name}")
+>>>>>>> origin/main
             params = pika.URLParameters(RABBITMQ_HOST)
             connection = pika.BlockingConnection(params)
             channel = connection.channel()
@@ -111,7 +117,9 @@ def subscribe(ws):
             channel.queue_bind(exchange='webapp_exchange_rooms', queue=queue_name, routing_key=routing_key)
             channel.queue_bind(exchange='webapp_exchange_notifications', queue=queue_name, routing_key=routing_key)
             def callback(ch, method, properties, body):
-                try: ws.send(body.decode('utf-8'))
+                try: 
+                    print(f"Received message for room {room_name}: {body.decode('utf-8')}")
+                    ws.send(body.decode('utf-8'))
                 except: ch.stop_consuming()
             channel.basic_consume(queue=queue_name, on_message_callback=callback, auto_ack=True)
             channel.start_consuming()

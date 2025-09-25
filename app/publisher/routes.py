@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, jsonify
 from ..models import Channel, Message, User
-from .. import db, sock
+from .. import db, sock, RABBITMQ_HOST
 from ..subscriber.helpers import publish_to_rabbitmq
 import json
 import pika
@@ -143,7 +143,8 @@ def publisher_notifications(ws):
 
     def rabbitmq_listener():
         try:
-            connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
+            params = pika.URLParameters(RABBITMQ_HOST)
+            connection = pika.BlockingConnection(params)
             channel = connection.channel()
             channel.exchange_declare(exchange='webapp_exchange_notifications', exchange_type='topic')
             result = channel.queue_declare(queue='', exclusive=True)

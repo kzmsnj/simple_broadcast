@@ -14,38 +14,34 @@ NOTIF_EXCHANGE = 'webapp_exchange_notifications'
 
 def create_app():
     app = Flask(__name__)
-    # Ini akan menunjuk ke folder root proyek Anda (D:\pro_messaging_app)
     base_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 
     app.config['SECRET_KEY'] = 'kunci-rahasia-yang-sangat-aman'
     
-    # --- BLOK YANG DIPERBAIKI ---
-    # Prioritaskan DATABASE_URL untuk lingkungan produksi.
-    # Jika tidak ada, gunakan file chat.db di folder proyek untuk development lokal.
     database_url = os.environ.get('DATABASE_URL')
     if database_url:
-        # Gunakan URL dari environment variable jika ada (untuk produksi)
         app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     else:
-        # Gunakan path lokal jika tidak ada (untuk development)
         app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(base_dir, 'chat.db')
     
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
     db.init_app(app)
     sock.init_app(app)
+    # Inisialisasi Migrate di sini
     Migrate(app, db)
 
-    with app.app_context():
-        from .auth.routes import auth_bp
-        app.register_blueprint(auth_bp)
+    from .auth.routes import auth_bp
+    app.register_blueprint(auth_bp)
 
-        from .publisher.routes import publisher_bp
-        app.register_blueprint(publisher_bp)
-        
-        from .subscriber.routes import subscriber_bp
-        app.register_blueprint(subscriber_bp)
+    from .publisher.routes import publisher_bp
+    app.register_blueprint(publisher_bp)
+    
+    from .subscriber.routes import subscriber_bp
+    app.register_blueprint(subscriber_bp)
 
-        db.create_all()
+    # HAPUS db.create_all() DARI SINI
+    # with app.app_context():
+    #     db.create_all()
 
-        return app
+    return app

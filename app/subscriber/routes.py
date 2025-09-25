@@ -8,6 +8,7 @@ import threading
 
 subscriber_bp = Blueprint('subscriber', __name__, url_prefix='/subscriber')
 
+# ... (kode dari @subscriber_bp.route('/') hingga @subscriber_bp.route('/toggle_subscription') tetap sama) ...
 # Rute utama untuk menampilkan dashboard subscriber
 @subscriber_bp.route('/')
 def dashboard():
@@ -83,7 +84,7 @@ def toggle_subscription():
         'subscription_count': len(user.subscribed_channels)
     })
 
-# Rute untuk menangani koneksi WebSocket real-time
+# --- BLOK WEBSOCKET YANG DIPERBAIKI ---
 @sock.route('/subscribe')
 def subscribe(ws):
     """
@@ -93,7 +94,8 @@ def subscribe(ws):
     room_name = request.args.get('room')
     username = request.args.get('username')
     if not room_name or not username:
-        ws.close(); return
+        ws.close()
+        return
 
     # Logika Pengguna Online (Bergabung)
     if room_name not in online_users:
@@ -103,14 +105,16 @@ def subscribe(ws):
     
     # Mengirim Riwayat Pesan
     with current_app.app_context():
-        history = Message.query.join(Channel).filter(Channel.name == room_name).order_by(Message.timestamp.asc()).limit(50).all()
-        for msg in history:
-            hist_msg = msg.to_dict()
-            hist_msg['type'] = 'history'
-            try:
+        try:
+            history = Message.query.join(Channel).filter(Channel.name == room_name).order_by(Message.timestamp.asc()).limit(50).all()
+            for msg in history:
+                if not ws.connected:
+                    break
+                hist_msg = msg.to_dict()
+                hist_msg['type'] = 'history'
                 ws.send(json.dumps(hist_msg))
-            except Exception:
-                break
+        except Exception as e:
+            print(f"Error sending history: {e}")
 
     # Listener RabbitMQ di thread terpisah
     def rabbitmq_listener():
@@ -128,7 +132,10 @@ def subscribe(ws):
             
             def callback(ch, method, properties, body):
                 try: 
-                    ws.send(body.decode('utf-8'))
+                    if ws.connected:
+                        ws.send(body.decode('utf-8'))
+                    else:
+                        ch.stop_consuming()
                 except Exception:
                     ch.stop_consuming()
             
@@ -142,13 +149,15 @@ def subscribe(ws):
     listener_thread.start()
 
     try:
-        while True:
-            ws.receive(timeout=None)
+        # Loop utama yang diperbaiki
+        while ws.connected:
+            # Menerima pesan apapun dari klien untuk menjaga koneksi
+            ws.receive(timeout=None) 
     except Exception:
         pass
     finally:
         # Logika Pengguna Online (Keluar)
-        if room_name in online_users and username in online_users[room_name]:
+        if room_name in online_users and username in online_users.get(room_name, set()):
             online_users[room_name].remove(username)
             if not online_users[room_name]:
                 del online_users[room_name]

@@ -5,9 +5,11 @@ from ..subscriber.helpers import publish_to_rabbitmq
 import json
 import pika
 import threading
+import time # Impor time
 
 publisher_bp = Blueprint('publisher', __name__, url_prefix='/publisher')
 
+# ... (semua kode dari @publisher_bp.route('/') hingga @publisher_bp.route('/stats') tetap sama) ...
 # RUTE UTAMA: Menampilkan Dashboard Publisher
 @publisher_bp.route('/')
 def dashboard():
@@ -130,7 +132,8 @@ def get_stats():
         'total_subscribers': total_subscribers
     })
 
-# ENDPOINT WEBSOCKET UNTUK NOTIFIKASI REAL-TIME
+
+# --- BLOK WEBSOCKET YANG DIPERBAIKI ---
 @sock.route('/publisher/notifications')
 def publisher_notifications(ws):
     """
@@ -139,8 +142,10 @@ def publisher_notifications(ws):
     """
     user_id = session.get('user_id')
     if not user_id:
-        ws.close(); return
+        ws.close()
+        return
 
+    # Fungsi listener RabbitMQ tetap sama
     def rabbitmq_listener():
         try:
             params = pika.URLParameters(RABBITMQ_HOST)
@@ -154,8 +159,13 @@ def publisher_notifications(ws):
 
             def callback(ch, method, properties, body):
                 try:
-                    ws.send(body.decode('utf-8'))
-                except:
+                    # Cek koneksi sebelum mengirim
+                    if ws.connected:
+                        ws.send(body.decode('utf-8'))
+                    else:
+                        # Jika koneksi sudah ditutup, hentikan konsumsi pesan
+                        ch.stop_consuming()
+                except Exception:
                     ch.stop_consuming()
             
             channel.basic_consume(queue=queue_name, on_message_callback=callback, auto_ack=True)
@@ -167,8 +177,16 @@ def publisher_notifications(ws):
     listener_thread.daemon = True
     listener_thread.start()
 
-    while not ws.closed:
-        try:
-            ws.receive(timeout=60)
-        except Exception:
-            break
+    # Loop utama yang sudah diperbaiki
+    try:
+        while ws.connected:
+            # Tetap menerima pesan (jika ada) untuk menjaga koneksi tetap hidup
+            # Timeout bisa disesuaikan, 1 detik sudah cukup
+            ws.receive(timeout=1)
+    except Exception:
+        # Menangani jika koneksi terputus secara tidak normal
+        pass
+    finally:
+        # Blok ini akan dijalankan saat loop berakhir (koneksi terputus)
+        # Tidak perlu melakukan apa-apa di sini, thread akan berhenti sendiri
+        pass

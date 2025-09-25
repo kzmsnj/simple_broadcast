@@ -147,7 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const bubble = document.createElement('div');
         bubble.classList.add('message-bubble');
 
-        const roomBadge = `<span class="badge bg-secondary me-2">${data.room}</span>`;
+        const roomBadge = `<span class="badge bg-dark me-2">${data.room}</span>`;
 
         if (data.username === username) wrapper.classList.add('sent');
         else wrapper.classList.add('received');
@@ -181,7 +181,7 @@ document.addEventListener('DOMContentLoaded', () => {
      * yang sudah di-subscribe dari database.
      */
     function initializeSubscriptions() {
-        const subscribedButtons = document.querySelectorAll('.subscribe-btn.disabled');
+        const subscribedButtons = document.querySelectorAll('.subscribe-btn.disabled, .subscribe-btn.btn-secondary');
         subscriptionsCountSpan.textContent = subscribedButtons.length;
         subscribedButtons.forEach(button => {
             connect(button.dataset.room);

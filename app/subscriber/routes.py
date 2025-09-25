@@ -63,6 +63,18 @@ def toggle_subscription():
         action = 'subscribed'
     
     db.session.commit()
+
+    # --- PENYESUAIAN TERBARU: Kirim notifikasi ke RabbitMQ ---
+    owner_id = channel.creator_id
+    notification_message = {
+        "type": "subscription_update",
+        "owner_id": owner_id
+    }
+    publish_to_rabbitmq(
+        exchange='webapp_exchange_notifications', 
+        routing_key=f"user.{owner_id}", 
+        body=json.dumps(notification_message)
+    )
     
     # Kembalikan respons JSON ke frontend
     return jsonify({
@@ -80,11 +92,8 @@ def subscribe(ws):
     """
     room_name = request.args.get('room')
     username = request.args.get('username')
-    print(f"WebSocket connection attempt: room={room_name}, username={username}")
     if not room_name or not username:
-        print("WebSocket connection rejected: missing room or username")
-        ws.close()
-        return
+        ws.close(); return
 
     # Logika Pengguna Online (Bergabung)
     if room_name not in online_users:
@@ -106,7 +115,6 @@ def subscribe(ws):
     # Listener RabbitMQ di thread terpisah
     def rabbitmq_listener():
         try:
-            print(f"Starting RabbitMQ listener for room: {room_name}")
             params = pika.URLParameters(RABBITMQ_HOST)
             connection = pika.BlockingConnection(params)
             channel = connection.channel()
@@ -120,7 +128,6 @@ def subscribe(ws):
             
             def callback(ch, method, properties, body):
                 try: 
-                    print(f"Received message for room {room_name}: {body.decode('utf-8')}")
                     ws.send(body.decode('utf-8'))
                 except Exception:
                     ch.stop_consuming()
@@ -136,10 +143,8 @@ def subscribe(ws):
 
     try:
         while True:
-            # Tetap buka koneksi untuk mendengarkan dari listener
             ws.receive(timeout=None)
     except Exception:
-        # Ini akan terjadi jika koneksi ditutup oleh klien
         pass
     finally:
         # Logika Pengguna Online (Keluar)
@@ -148,4 +153,3 @@ def subscribe(ws):
             if not online_users[room_name]:
                 del online_users[room_name]
             broadcast_user_list(room_name)
-        print(f"WebSocket connection closed for {username} in room {room_name}")

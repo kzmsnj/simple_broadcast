@@ -83,10 +83,12 @@ def subscribe(ws):
     print(f"WebSocket connection attempt: room={room_name}, username={username}")
     if not room_name or not username:
         print("WebSocket connection rejected: missing room or username")
-        ws.close(); return
+        ws.close()
+        return
 
     # Logika Pengguna Online (Bergabung)
-    if room_name not in online_users: online_users[room_name] = set()
+    if room_name not in online_users:
+        online_users[room_name] = set()
     online_users[room_name].add(username)
     broadcast_user_list(room_name)
     
@@ -96,16 +98,15 @@ def subscribe(ws):
         for msg in history:
             hist_msg = msg.to_dict()
             hist_msg['type'] = 'history'
-            try: ws.send(json.dumps(hist_msg))
-            except: break
+            try:
+                ws.send(json.dumps(hist_msg))
+            except Exception:
+                break
 
     # Listener RabbitMQ di thread terpisah
     def rabbitmq_listener():
         try:
-<<<<<<< HEAD
-=======
             print(f"Starting RabbitMQ listener for room: {room_name}")
->>>>>>> origin/main
             params = pika.URLParameters(RABBITMQ_HOST)
             connection = pika.BlockingConnection(params)
             channel = connection.channel()
@@ -116,25 +117,35 @@ def subscribe(ws):
             routing_key = f"rooms.{room_name}"
             channel.queue_bind(exchange='webapp_exchange_rooms', queue=queue_name, routing_key=routing_key)
             channel.queue_bind(exchange='webapp_exchange_notifications', queue=queue_name, routing_key=routing_key)
+            
             def callback(ch, method, properties, body):
                 try: 
                     print(f"Received message for room {room_name}: {body.decode('utf-8')}")
                     ws.send(body.decode('utf-8'))
-                except: ch.stop_consuming()
+                except Exception:
+                    ch.stop_consuming()
+            
             channel.basic_consume(queue=queue_name, on_message_callback=callback, auto_ack=True)
             channel.start_consuming()
-        except Exception as e: print(f"RabbitMQ listener error: {e}")
+        except Exception as e:
+            print(f"RabbitMQ listener error: {e}")
 
     listener_thread = threading.Thread(target=rabbitmq_listener)
     listener_thread.daemon = True
     listener_thread.start()
 
     try:
-        while True: ws.receive(timeout=None)
-    except Exception: pass
+        while True:
+            # Tetap buka koneksi untuk mendengarkan dari listener
+            ws.receive(timeout=None)
+    except Exception:
+        # Ini akan terjadi jika koneksi ditutup oleh klien
+        pass
     finally:
         # Logika Pengguna Online (Keluar)
         if room_name in online_users and username in online_users[room_name]:
             online_users[room_name].remove(username)
-            if not online_users[room_name]: del online_users[room_name]
+            if not online_users[room_name]:
+                del online_users[room_name]
             broadcast_user_list(room_name)
+        print(f"WebSocket connection closed for {username} in room {room_name}")

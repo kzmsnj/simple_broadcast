@@ -14,15 +14,22 @@ NOTIF_EXCHANGE = 'webapp_exchange_notifications'
 
 def create_app():
     app = Flask(__name__)
+    # Ini akan menunjuk ke folder root proyek Anda (D:\pro_messaging_app)
     base_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 
     app.config['SECRET_KEY'] = 'kunci-rahasia-yang-sangat-aman'
-    # Prefer DATABASE_URL (e.g., from App Runner/Env). Fallback to writable /tmp for ephemeral FS
+    
+    # --- BLOK YANG DIPERBAIKI ---
+    # Prioritaskan DATABASE_URL untuk lingkungan produksi.
+    # Jika tidak ada, gunakan file chat.db di folder proyek untuk development lokal.
     database_url = os.environ.get('DATABASE_URL')
-    if not database_url:
-        tmp_dir = os.environ.get('DATABASE_TMP_DIR', '/tmp')
-        database_url = 'sqlite:///' + os.path.join(tmp_dir, 'chat.db')
-    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+    if database_url:
+        # Gunakan URL dari environment variable jika ada (untuk produksi)
+        app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+    else:
+        # Gunakan path lokal jika tidak ada (untuk development)
+        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(base_dir, 'chat.db')
+    
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
     db.init_app(app)
@@ -42,4 +49,3 @@ def create_app():
         db.create_all()
 
         return app
-
